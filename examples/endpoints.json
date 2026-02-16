@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "w": 3,
+    "h": 3,
+    "cells": [
+      ["white", "white", "white"],
+      ["black", "black", "white"],
+      ["white", "white", "white"]
+    ],
+    "anchors": [{"x": 1.5, "y": 1.5}],
+    "negative": true,
+    "rotational": true,
+    "mirror": true,
+    "exclude": false
+  },
+  {
+    "id": 2,
+    "w": 3,
+    "h": 3,
+    "cells": [
+      ["white", "white", "white"],
+      ["white", "black", "white"],
+      ["white", "white", "white"]
+    ],
+    "anchors": [{"x": 1.5, "y": 1.5}],
+    "negative": true,
+    "rotational": false,
+    "mirror": false,
+    "exclude": false
+  }
+]
