@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Pixel Pattern Detector</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Consolas','Monaco',monospace;background:#1a1a2e;color:#e0e0e0;display:flex;height:100vh;overflow:hidden}
+
+.sidebar{width:320px;min-width:320px;border-right:2px solid #333;padding:12px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}
+.main{flex:1;display:flex;flex-direction:column;align-items:center;padding:12px;gap:8px;overflow:auto}
+
+h1{color:#0ff;font-size:18px;margin-bottom:2px}
+h2{color:#0ff;font-size:13px;margin-bottom:6px}
+
+.row{display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap}
+.row input[type=number]{width:40px;background:#2a2a3e;color:#fff;border:1px solid #555;padding:3px;text-align:center;font-family:inherit;border-radius:2px}
+.hint{font-size:10px;color:#777;margin:2px 0}
+
+#gridWrap{display:flex;justify-content:center;margin:6px 0}
+.grid{display:inline-grid;gap:1px;background:#555;border:2px solid #0ff;padding:1px;position:relative}
+.cell{width:32px;height:32px;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;font-size:18px;user-select:none;transition:background .05s}
+.cell-any{background:#555;color:#777}
+.cell-black{background:#111}
+.cell-white{background:#eee}
+.cell:hover{outline:2px solid #0ff;outline-offset:-2px;z-index:1}
+.anchor-dot{position:absolute;width:12px;height:12px;border-radius:50%;background:#0f0;border:2px solid #ff0;pointer-events:none;z-index:10;transform:translate(-50%,-50%)}
+
+.opts{display:flex;flex-direction:column;gap:4px;font-size:11px;margin-top:4px}
+.opts label{display:flex;align-items:center;gap:4px;cursor:pointer}
+.opts input[type=checkbox]{accent-color:#0ff}
+
+button{background:#0ff;color:#000;border:none;padding:5px 12px;border-radius:3px;cursor:pointer;font-weight:bold;font-size:11px;font-family:inherit}
+button:hover{background:#0dd}
+button.sm{padding:3px 8px;font-size:10px}
+button.danger{background:#f55;color:#fff}
+button.danger:hover{background:#d33}
+
+.rules-list{display:flex;flex-wrap:wrap;gap:6px;min-height:30px}
+.rule-item{position:relative;border:2px solid #444;border-radius:3px;padding:2px;cursor:pointer;background:#2a2a3e}
+.rule-item.active{border-color:#0f0;box-shadow:0 0 6px rgba(0,255,0,.3)}
+.rule-item.excl{border-style:dashed}
+.rule-item.excl.active{border-color:#f55;box-shadow:0 0 6px rgba(255,50,50,.3)}
+.rule-item.highlight{border-color:#ff0;box-shadow:0 0 8px rgba(255,255,0,.5)}
+.rule-item canvas{display:block;image-rendering:pixelated}
+.rule-item .x{position:absolute;top:-6px;right:-6px;width:14px;height:14px;background:#f55;color:#fff;border:none;border-radius:50%;font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+.rule-item .x:hover{background:#f00}
+.rule-item .badges{position:absolute;bottom:-5px;left:-2px;display:flex;gap:2px}
+.badge{font-size:7px;padding:1px 3px;border-radius:2px;color:#fff;font-weight:bold}
+.badge-neg{background:#07a}
+.badge-rot{background:#a70}
+.badge-mir{background:#077}
+.badge-excl{background:#a22}
+
+#canvasWrap{position:relative;display:inline-block;border:2px solid #0ff}
+#dCanvas{display:block;image-rendering:pixelated;cursor:crosshair}
+#selBox{position:absolute;border:2px dashed #ff0;background:rgba(255,255,0,0.08);display:none;pointer-events:none;z-index:5}
+.img-tabs{display:flex;gap:2px;flex-wrap:wrap}
+.img-tab{padding:3px 8px;background:#2a2a3e;color:#aaa;border:1px solid #444;border-bottom:none;border-radius:3px 3px 0 0;cursor:pointer;font-size:10px;font-family:inherit}
+.img-tab:hover{color:#fff}
+.img-tab.active{background:#1a1a2e;color:#0ff;border-color:#0ff}
+.nudge{display:flex;align-items:center;gap:3px;font-size:10px;color:#777}
+.nudge button{padding:1px 6px;font-size:12px;min-width:22px}
+.sel-actions{display:flex;align-items:center;gap:8px;font-size:11px}
+.sel-actions span{color:#ff0}
+.status{display:flex;gap:15px;align-items:center;font-size:12px;flex-wrap:wrap}
+.status .ct{color:#0ff;font-weight:bold;font-size:14px}
+.zc{display:flex;align-items:center;gap:4px;font-size:11px}
+.zc input[type=range]{width:80px}
+.drop{font-size:10px;color:#555}
+.coord{color:#888;font-size:11px;min-width:100px}
+.preview-note{font-size:10px;color:#0f0}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h1>Pixel Rules</h1>
+
+    <div>
+        <h2>Rule Editor</h2>
+        <div class="row">
+            Size:
+            <input type="number" id="gW" value="4" min="2" max="12">&times;<input type="number" id="gH" value="4" min="2" max="12">
+            <button class="sm" onclick="resizeGrid()">Resize</button>
+        </div>
+        <div class="hint">Click: cycle &#9632;/&#9633;/any &middot; Right-click: add/remove node</div>
+        <div class="hint">Node snaps: center / edge / corner of cell</div>
+        <div id="gridWrap"></div>
+        <div class="row" style="justify-content:space-between">
+            <span class="hint" style="margin:0">Nodes: <span id="nCt">1</span></span>
+            <div class="nudge">
+                Nudge:
+                <button class="sm" onclick="nudge(-1,0)">&larr;</button>
+                <button class="sm" onclick="nudge(1,0)">&rarr;</button>
+                <button class="sm" onclick="nudge(0,-1)">&uarr;</button>
+                <button class="sm" onclick="nudge(0,1)">&darr;</button>
+            </div>
+        </div>
+        <div class="opts">
+            <label><input type="checkbox" id="chkNeg" checked onchange="onOptChange()"> Negative (BW&#8596;WB)</label>
+            <label><input type="checkbox" id="chkRot" checked onchange="onOptChange()"> Rotational (0&#176; 90&#176; 180&#176; 270&#176;)</label>
+            <label><input type="checkbox" id="chkMir" checked onchange="onOptChange()"> Mirror</label>
+            <label><input type="checkbox" id="chkExcl" onchange="onOptChange()"> Exclusion rule</label>
+        </div>
+        <div class="row" style="margin-top:6px">
+            <button id="saveBtn" onclick="saveRule()">+ Save Rule</button>
+            <button class="sm" onclick="clearGrid()">Clear</button>
+        </div>
+        <div id="previewNote" class="preview-note" style="display:none">&#9889; Live preview active</div>
+    </div>
+
+    <div>
+        <div class="row" style="justify-content:space-between;margin-bottom:6px">
+            <h2 style="margin:0">Rules (<span id="rCt">0</span>)</h2>
+            <div class="row" style="gap:4px">
+                <button class="sm" onclick="saveSettings()">Save</button>
+                <button class="sm" onclick="loadSettings()">Load</button>
+            </div>
+        </div>
+        <div id="rList" class="rules-list"></div>
+    </div>
+</div>
+
+<div class="main">
+    <div class="img-tabs" id="imgTabs"></div>
+    <div id="canvasWrap">
+        <canvas id="dCanvas"></canvas>
+        <div id="selBox"></div>
+    </div>
+    <div id="selActions" class="sel-actions" style="display:none">
+        <span id="selInfo"></span>
+        <button onclick="copySelToRule()">Copy to Rule</button>
+        <button class="sm" onclick="clearSel()">Cancel</button>
+    </div>
+    <div class="status">
+        <span>Matches: <span class="ct" id="mCt">0</span></span>
+        <div class="zc">
+            Zoom: <input type="range" id="zSlider" min="1" max="8" step="1" value="3">
+            <span id="zVal">3&times;</span>
+        </div>
+        <span class="coord" id="coord"></span>
+    </div>
+    <div class="drop">Drop an image here to replace test pattern</div>
+</div>
+
+<script>
+// --- STATE ---
+let rules = [];
+let editId = null;
+let eW = 4, eH = 4;
+let eCells = [];
+let eAnchors = [{x: 1.5, y: 1.5}];  // float anchors in pattern coords
+let eNegative = true;
+let eRotational = true;
+let eMirror = true;
+let eExclude = false;
+let imgBin = null;
+let imgW = 0, imgH = 0;
+let zoom = 3;
+let uid = 1;
+let curImg = 0;
+let selDrag = false;
+let selStart = null;   // {x, y} pixel coords
+let selRect = null;    // {x, y, w, h} finalized
+let lastHitMap = null; // Map<string, Set<ruleId>> from last detect()
+let hoveredRids = null; // Set<ruleId> currently hovered
+
+// --- INIT ---
+function init() {
+    switchImg(0);
+    resetEditor();
+    wire();
+    renderAll();
+}
+
+// --- TEST IMAGES ---
+function genImg(w, h, fn) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+    x.fillStyle = '#000'; x.strokeStyle = '#000';
+    fn(x);
+    const id = x.getImageData(0, 0, w, h);
+    imgBin = []; imgW = w; imgH = h;
+    for (let y = 0; y < h; y++) {
+        imgBin[y] = [];
+        for (let xx = 0; xx < w; xx++) {
+            const i = (y * w + xx) * 4;
+            imgBin[y][xx] = (id.data[i] * 0.299 + id.data[i + 1] * 0.587 + id.data[i + 2] * 0.114) < 128;
+        }
+    }
+}
+
+const testImages = [
+    {name: 'Rg8 + Shapes', gen: () => genImg(200, 150, x => {
+        x.font = 'bold 65px Georgia, serif'; x.fillText('R', 6, 58);
+        x.font = '46px Georgia, serif'; x.fillText('g', 62, 60);
+        x.font = 'bold 34px Georgia, serif'; x.fillText('8', 110, 52);
+        x.lineWidth = 2;
+        x.strokeRect(150, 6, 42, 30);
+        x.beginPath(); x.arc(170, 65, 18, 0, Math.PI * 2); x.stroke();
+        x.beginPath(); x.moveTo(150, 108); x.lineTo(170, 80); x.lineTo(192, 108); x.closePath(); x.stroke();
+        x.beginPath(); x.moveTo(6, 74); x.lineTo(50, 118); x.stroke();
+        x.beginPath(); x.moveTo(58, 118); x.lineTo(102, 74); x.stroke();
+        x.fillRect(15, 128, 14, 2); x.fillRect(21, 122, 2, 14);
+        x.fillRect(44, 122, 2, 18); x.fillRect(44, 138, 14, 2);
+        x.fillRect(72, 122, 14, 2); x.fillRect(78, 122, 2, 18);
+        x.beginPath(); x.moveTo(100, 128);
+        for (let i = 1; i <= 8; i++) x.lineTo(100 + i * 5, i % 2 ? 140 : 128);
+        x.lineWidth = 1.5; x.stroke();
+        for (let i = 0; i < 12; i++) x.fillRect(150 + i * 3, 115 + i * 2, 3, 2);
+        x.fillRect(150, 142, 2, 2); x.fillRect(158, 142, 2, 2);
+        x.fillRect(166, 142, 2, 2); x.fillRect(174, 142, 2, 2);
+    })},
+    {name: 'Serif Letters', gen: () => genImg(300, 220, x => {
+        x.font = 'bold 48px Georgia, "Times New Roman", serif'; x.fillText('ABCabc', 4, 46);
+        x.font = '36px Georgia, "Times New Roman", serif'; x.fillText('DEFghij', 4, 86);
+        x.font = '24px "Times New Roman", Georgia, serif'; x.fillText('KLMNOPQRS', 4, 116);
+        x.font = 'italic 28px Georgia, serif'; x.fillText('Quixotic Fizzy', 4, 148);
+        x.font = '18px "Times New Roman", serif'; x.fillText('tuvwxyz & 012345', 4, 172);
+        x.font = '13px Georgia, serif'; x.fillText('The quick brown fox jumps over', 4, 190);
+        x.font = '13px Georgia, serif'; x.fillText('the lazy dog. SPHINX OF BLACK', 4, 206);
+    })},
+    {name: 'Sans Serif', gen: () => genImg(300, 220, x => {
+        x.font = 'bold 48px Arial, Helvetica, sans-serif'; x.fillText('ABCabc', 4, 46);
+        x.font = '36px Arial, Helvetica, sans-serif'; x.fillText('DEFghij', 4, 86);
+        x.font = '24px Arial, Helvetica, sans-serif'; x.fillText('KLMNOPQRS', 4, 116);
+        x.font = '20px Arial, Helvetica, sans-serif'; x.fillText('tuvwxyz 6789', 4, 142);
+        x.font = 'bold 22px "Courier New", monospace'; x.fillText('MONO fixed', 4, 168);
+        x.font = '16px "Courier New", monospace'; x.fillText('var code += 1;', 4, 188);
+        x.font = '12px Arial, sans-serif'; x.fillText('!@#$%^&*() Small caps test line', 4, 206);
+    })},
+    {name: 'Multi Size', gen: () => genImg(300, 240, x => {
+        const fonts = ['Georgia, serif', 'Arial, sans-serif', '"Courier New", monospace'];
+        const labels = ['Serif', 'Sans', 'Mono'];
+        let y = 0;
+        for (const sz of [10, 12, 14, 18, 24, 32]) {
+            for (let fi = 0; fi < 3; fi++) {
+                x.font = sz + 'px ' + fonts[fi];
+                x.fillText(labels[fi] + ' ' + sz + 'px Hgkp', 4, y + sz);
+                y += sz + 3;
+            }
+        }
+    })},
+    {name: 'Bold vs Thin', gen: () => genImg(280, 200, x => {
+        x.font = 'bold 56px Arial, sans-serif'; x.fillText('Hk', 4, 54);
+        x.font = '56px Georgia, serif'; x.fillText('Rg', 90, 54);
+        x.font = 'bold 32px Georgia, serif'; x.fillText('Bold Serif', 4, 96);
+        x.font = '32px Arial, sans-serif'; x.fillText('Light Sans', 4, 132);
+        x.font = '20px "Courier New", monospace'; x.fillText('Fixed Width Mono', 4, 158);
+        x.lineWidth = 1;
+        x.beginPath(); x.moveTo(4, 170); x.lineTo(276, 170); x.stroke();
+        x.lineWidth = 2;
+        x.beginPath(); x.moveTo(4, 178); x.lineTo(276, 178); x.stroke();
+        x.lineWidth = 3;
+        x.beginPath(); x.moveTo(4, 188); x.lineTo(276, 188); x.stroke();
+    })},
+    {name: 'Geometry', gen: () => genImg(300, 220, x => {
+        // Circles at various sizes
+        x.lineWidth = 1.5;
+        for (let r = 4; r <= 24; r += 5) {
+            x.beginPath(); x.arc(10 + r * 2.5, 30, r, 0, Math.PI * 2); x.stroke();
+        }
+        // Rectangles
+        x.lineWidth = 2;
+        x.strokeRect(10, 60, 50, 35);
+        x.strokeRect(70, 60, 25, 25);
+        x.fillRect(105, 60, 20, 20);
+        x.strokeRect(135, 60, 40, 15);
+        // Triangles
+        x.beginPath(); x.moveTo(200, 95); x.lineTo(230, 60); x.lineTo(260, 95); x.closePath(); x.stroke();
+        x.beginPath(); x.moveTo(200, 60); x.lineTo(200, 95); x.lineTo(230, 95); x.closePath(); x.fill();
+        // Diagonal lines at many angles
+        x.lineWidth = 1.5;
+        for (let a = 0; a < 180; a += 15) {
+            const rad = a * Math.PI / 180, cx = 70, cy = 150, len = 35;
+            x.beginPath();
+            x.moveTo(cx - Math.cos(rad) * len, cy - Math.sin(rad) * len);
+            x.lineTo(cx + Math.cos(rad) * len, cy + Math.sin(rad) * len);
+            x.stroke();
+        }
+        // Staircase patterns
+        for (let s = 1; s <= 4; s++) {
+            const bx = 140, by = 110 + s * 22;
+            for (let i = 0; i < 8; i++) x.fillRect(bx + i * s * 2, by - i * s, s * 2, s);
+        }
+        // Filled circles
+        for (let r = 2; r <= 10; r += 2) {
+            x.beginPath(); x.arc(240 + r * 3, 150, r, 0, Math.PI * 2); x.fill();
+        }
+    })},
+    {name: 'Punctuation', gen: () => genImg(280, 200, x => {
+        x.font = 'bold 40px Georgia, serif'; x.fillText('!?@&#%', 4, 40);
+        x.font = '36px Arial, sans-serif'; x.fillText('(){}[]<>', 4, 80);
+        x.font = '30px "Courier New", monospace'; x.fillText('+-=*/\\|', 4, 114);
+        x.font = '24px Georgia, serif'; x.fillText('"\'`~^_:;,.', 4, 144);
+        x.font = 'bold 20px Arial, sans-serif'; x.fillText('0123456789', 4, 170);
+        x.font = '16px "Courier New", monospace'; x.fillText('$100.00 #tag @user', 4, 192);
+    })},
+];
+
+function switchImg(idx) {
+    curImg = idx;
+    testImages[idx].gen();
+    clearSel();
+    renderTabs();
+}
+
+function renderTabs() {
+    const el = document.getElementById('imgTabs');
+    el.innerHTML = '';
+    for (let i = 0; i < testImages.length; i++) {
+        const t = document.createElement('div');
+        t.className = 'img-tab' + (i === curImg ? ' active' : '');
+        t.textContent = testImages[i].name;
+        t.onclick = ((idx) => () => { switchImg(idx); renderAll(); })(i);
+        el.appendChild(t);
+    }
+}
+
+// --- EDITOR ---
+function resetEditor() {
+    eW = parseInt(document.getElementById('gW').value) || 4;
+    eH = parseInt(document.getElementById('gH').value) || 4;
+    eCells = Array.from({length: eH}, () => Array(eW).fill('any'));
+    eAnchors = [{x: Math.floor(eW / 2) + 0.5, y: Math.floor(eH / 2) + 0.5}];
+    eNegative = true;
+    eRotational = true;
+    eMirror = true;
+    eExclude = false;
+    document.getElementById('chkNeg').checked = true;
+    document.getElementById('chkRot').checked = true;
+    document.getElementById('chkMir').checked = true;
+    document.getElementById('chkExcl').checked = false;
+    editId = null;
+    buildGrid();
+}
+
+function clearGrid() {
+    eCells = Array.from({length: eH}, () => Array(eW).fill('any'));
+    buildGrid();
+    if (editId !== null) pushEdit();
+    renderAll();
+}
+
+function resizeGrid() {
+    const nw = Math.max(2, Math.min(12, parseInt(document.getElementById('gW').value) || 4));
+    const nh = Math.max(2, Math.min(12, parseInt(document.getElementById('gH').value) || 4));
+    const nc = Array.from({length: nh}, (_, y) => Array.from({length: nw}, (_, x) => (y < eH && x < eW) ? eCells[y][x] : 'any'));
+    eW = nw; eH = nh; eCells = nc;
+    eAnchors = eAnchors.map(a => ({x: Math.min(a.x, nw), y: Math.min(a.y, nh)}));
+    document.getElementById('gW').value = nw;
+    document.getElementById('gH').value = nh;
+    buildGrid();
+    if (editId !== null) pushEdit();
+    renderAll();
+}
+
+function onOptChange() {
+    eNegative = document.getElementById('chkNeg').checked;
+    eRotational = document.getElementById('chkRot').checked;
+    eMirror = document.getElementById('chkMir').checked;
+    eExclude = document.getElementById('chkExcl').checked;
+    if (editId !== null) pushEdit();
+    renderAll();
+}
+
+function nudge(dx, dy) {
+    const nc = Array.from({length: eH}, () => Array(eW).fill('any'));
+    for (let y = 0; y < eH; y++) {
+        for (let x = 0; x < eW; x++) {
+            const sy = y - dy, sx = x - dx;
+            if (sy >= 0 && sy < eH && sx >= 0 && sx < eW)
+                nc[y][x] = eCells[sy][sx];
+        }
+    }
+    eCells = nc;
+    eAnchors = eAnchors.map(a => ({x: a.x + dx, y: a.y + dy}))
+        .filter(a => a.x > 0 && a.x < eW && a.y > 0 && a.y < eH);
+    if (eAnchors.length === 0) eAnchors = [{x: Math.floor(eW / 2) + 0.5, y: Math.floor(eH / 2) + 0.5}];
+    buildGrid();
+    if (editId !== null) pushEdit();
+    renderAll();
+}
+
+function buildGrid() {
+    const wrap = document.getElementById('gridWrap');
+    const g = document.createElement('div');
+    g.className = 'grid';
+    g.style.gridTemplateColumns = `repeat(${eW},32px)`;
+
+    for (let y = 0; y < eH; y++) {
+        for (let x = 0; x < eW; x++) {
+            const d = document.createElement('div');
+            const s = eCells[y][x];
+            d.className = `cell cell-${s}`;
+            if (s === 'any') d.textContent = '\u00b7';
+
+            d.addEventListener('click', ((cy, cx) => () => {
+                const cyc = {any: 'black', black: 'white', white: 'any'};
+                eCells[cy][cx] = cyc[eCells[cy][cx]];
+                buildGrid();
+                if (editId !== null) pushEdit();
+                renderAll();
+            })(y, x));
+
+            d.addEventListener('contextmenu', ((cy, cx) => e => {
+                e.preventDefault();
+                const rect = d.getBoundingClientRect();
+                const lx = e.clientX - rect.left;
+                const ly = e.clientY - rect.top;
+                const th = 10;
+                let sx = 0.5, sy = 0.5;
+                if (lx < th) sx = 0;
+                else if (lx > 32 - th) sx = 1;
+                if (ly < th) sy = 0;
+                else if (ly > 32 - th) sy = 1;
+                const nx = cx + sx, ny = cy + sy;
+                const ei = eAnchors.findIndex(a => a.x === nx && a.y === ny);
+                if (ei >= 0) {
+                    if (eAnchors.length > 1) eAnchors.splice(ei, 1);
+                } else {
+                    eAnchors.push({x: nx, y: ny});
+                }
+                buildGrid();
+                if (editId !== null) pushEdit();
+                renderAll();
+            })(y, x));
+
+            g.appendChild(d);
+        }
+    }
+
+    // Anchor dot overlays on grid
+    for (const a of eAnchors) {
+        const dot = document.createElement('div');
+        dot.className = 'anchor-dot';
+        dot.style.left = (1 + a.x * 33) + 'px';
+        dot.style.top = (1 + a.y * 33) + 'px';
+        g.appendChild(dot);
+    }
+    document.getElementById('nCt').textContent = eAnchors.length;
+
+    wrap.innerHTML = '';
+    wrap.appendChild(g);
+}
+
+// --- RULE MANAGEMENT ---
+function saveRule() {
+    if (editId !== null) { editId = null; resetEditor(); renderAll(); return; }
+    if (!eCells.some(r => r.some(c => c !== 'any'))) return;
+    rules.push({
+        id: uid++, w: eW, h: eH, cells: eCells.map(r => [...r]),
+        anchors: eAnchors.map(a => ({...a})), negative: eNegative, rotational: eRotational, mirror: eMirror, exclude: eExclude
+    });
+    resetEditor();
+    renderAll();
+}
+
+function pushEdit() {
+    const r = rules.find(r => r.id === editId);
+    if (!r) return;
+    r.w = eW; r.h = eH; r.cells = eCells.map(row => [...row]);
+    r.anchors = eAnchors.map(a => ({...a})); r.negative = eNegative; r.rotational = eRotational; r.mirror = eMirror; r.exclude = eExclude;
+}
+
+function loadRule(id) {
+    const r = rules.find(r => r.id === id);
+    if (!r) return;
+    editId = id;
+    eW = r.w; eH = r.h;
+    eCells = r.cells.map(row => [...row]);
+    eAnchors = r.anchors.map(a => ({...a}));
+    eNegative = r.negative; eRotational = r.rotational; eMirror = r.mirror; eExclude = r.exclude;
+    document.getElementById('gW').value = eW;
+    document.getElementById('gH').value = eH;
+    document.getElementById('chkNeg').checked = eNegative;
+    document.getElementById('chkRot').checked = eRotational;
+    document.getElementById('chkMir').checked = eMirror;
+    document.getElementById('chkExcl').checked = eExclude;
+    buildGrid();
+    renderAll();
+}
+
+function delRule(id) {
+    rules = rules.filter(r => r.id !== id);
+    if (editId === id) { editId = null; resetEditor(); }
+    renderAll();
+}
+
+function renderRules() {
+    const el = document.getElementById('rList');
+    el.innerHTML = '';
+    document.getElementById('rCt').textContent = rules.length;
+    document.getElementById('saveBtn').textContent = editId !== null ? 'Done Editing' : '+ Save Rule';
+
+    for (const r of rules) {
+        const item = document.createElement('div');
+        item.className = 'rule-item' + (editId === r.id ? ' active' : '') + (r.exclude ? ' excl' : '') + (hoveredRids && hoveredRids.has(r.id) ? ' highlight' : '');
+
+        const ts = 6;
+        const tc = document.createElement('canvas');
+        tc.width = r.w * ts + 1; tc.height = r.h * ts + 1;
+        const tx = tc.getContext('2d');
+        for (let y = 0; y < r.h; y++) {
+            for (let x = 0; x < r.w; x++) {
+                const s = r.cells[y][x];
+                tx.fillStyle = s === 'black' ? '#000' : s === 'white' ? '#fff' : '#666';
+                tx.fillRect(x * ts, y * ts, ts, ts);
+            }
+        }
+        tx.strokeStyle = '#444'; tx.lineWidth = .5;
+        for (let x = 0; x <= r.w; x++) { tx.beginPath(); tx.moveTo(x * ts, 0); tx.lineTo(x * ts, r.h * ts); tx.stroke(); }
+        for (let y = 0; y <= r.h; y++) { tx.beginPath(); tx.moveTo(0, y * ts); tx.lineTo(r.w * ts, y * ts); tx.stroke(); }
+        // Anchor dots on thumbnail
+        tx.fillStyle = r.exclude ? '#f55' : '#0f0';
+        tx.strokeStyle = '#ff0'; tx.lineWidth = 1;
+        for (const a of r.anchors) {
+            tx.beginPath();
+            tx.arc(a.x * ts, a.y * ts, ts * .35, 0, Math.PI * 2);
+            tx.fill(); tx.stroke();
+        }
+
+        item.appendChild(tc);
+
+        // Badges
+        const badges = document.createElement('div');
+        badges.className = 'badges';
+        if (r.negative) { const b = document.createElement('span'); b.className = 'badge badge-neg'; b.textContent = '\u00b1'; badges.appendChild(b); }
+        if (r.rotational) { const b = document.createElement('span'); b.className = 'badge badge-rot'; b.textContent = '\u21bb'; badges.appendChild(b); }
+        if (r.mirror) { const b = document.createElement('span'); b.className = 'badge badge-mir'; b.textContent = '\u2194'; badges.appendChild(b); }
+        if (r.exclude) { const b = document.createElement('span'); b.className = 'badge badge-excl'; b.textContent = '\u2715'; badges.appendChild(b); }
+        if (badges.children.length) item.appendChild(badges);
+
+        const xb = document.createElement('button');
+        xb.className = 'x'; xb.textContent = '\u00d7';
+        xb.onclick = e => { e.stopPropagation(); delRule(r.id); };
+        item.appendChild(xb);
+
+        item.onclick = () => loadRule(r.id);
+        el.appendChild(item);
+    }
+}
+
+// --- DETECTION ---
+function matchAt(cells, w, h, ix, iy) {
+    for (let ry = 0; ry < h; ry++) {
+        const py = iy + ry;
+        for (let rx = 0; rx < w; rx++) {
+            const s = cells[ry][rx];
+            if (s === 'any') continue;
+            const px = ix + rx;
+            if (px < 0 || px >= imgW || py < 0 || py >= imgH) return false;
+            const blk = imgBin[py][px];
+            if (s === 'black' && !blk) return false;
+            if (s === 'white' && blk) return false;
+        }
+    }
+    return true;
+}
+
+function matchAtInv(cells, w, h, ix, iy) {
+    for (let ry = 0; ry < h; ry++) {
+        const py = iy + ry;
+        for (let rx = 0; rx < w; rx++) {
+            const s = cells[ry][rx];
+            if (s === 'any') continue;
+            const px = ix + rx;
+            if (px < 0 || px >= imgW || py < 0 || py >= imgH) return false;
+            const blk = imgBin[py][px];
+            if (s === 'black' && blk) return false;
+            if (s === 'white' && !blk) return false;
+        }
+    }
+    return true;
+}
+
+function getTransforms(cells, w, h, anchors, rotational, mirror) {
+    const out = [];
+    const seen = new Set();
+    function add(c, tw, th, ta) {
+        const key = JSON.stringify(c) + '|' + JSON.stringify(ta);
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({cells: c, w: tw, h: th, anchors: ta});
+    }
+    // Identity
+    add(cells, w, h, anchors);
+    if (rotational) {
+        // 90 CW
+        const c90 = Array.from({length: w}, (_, ny) =>
+            Array.from({length: h}, (_, nx) => cells[h - 1 - nx][ny]));
+        add(c90, h, w, anchors.map(a => ({x: h - a.y, y: a.x})));
+        // 180
+        const c180 = Array.from({length: h}, (_, ny) =>
+            Array.from({length: w}, (_, nx) => cells[h - 1 - ny][w - 1 - nx]));
+        add(c180, w, h, anchors.map(a => ({x: w - a.x, y: h - a.y})));
+        // 270 CW
+        const c270 = Array.from({length: w}, (_, ny) =>
+            Array.from({length: h}, (_, nx) => cells[nx][w - 1 - ny]));
+        add(c270, h, w, anchors.map(a => ({x: a.y, y: w - a.x})));
+    }
+    if (mirror) {
+        const base = out.slice();
+        for (const t of base) {
+            const fc = Array.from({length: t.h}, (_, ny) =>
+                Array.from({length: t.w}, (_, nx) => t.cells[ny][t.w - 1 - nx]));
+            add(fc, t.w, t.h, t.anchors.map(a => ({x: t.w - a.x, y: a.y})));
+        }
+    }
+    return out;
+}
+
+function scanRule(r, hitMap, ruleId) {
+    if (!imgBin) return;
+    const transforms = getTransforms(r.cells, r.w, r.h, r.anchors, r.rotational, r.mirror);
+    for (const t of transforms) {
+        for (let iy = -(t.h - 1); iy < imgH; iy++) {
+            for (let ix = -(t.w - 1); ix < imgW; ix++) {
+                let hit = matchAt(t.cells, t.w, t.h, ix, iy);
+                if (!hit && r.negative) hit = matchAtInv(t.cells, t.w, t.h, ix, iy);
+                if (hit) {
+                    for (const a of t.anchors) {
+                        const hx = ix + a.x, hy = iy + a.y;
+                        if (hx >= 0 && hx <= imgW && hy >= 0 && hy <= imgH) {
+                            const key = hx + ',' + hy;
+                            if (!hitMap.has(key)) hitMap.set(key, new Set());
+                            hitMap.get(key).add(ruleId);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+function detect() {
+    if (!imgBin) { lastHitMap = null; return {green: [], red: []}; }
+
+    const editorHits = new Map(); // key → Set<ruleId>
+    const savedHits = new Map();
+    const exclHits = new Map();
+
+    const EDITOR_ID = '__editor__';
+    const hasEditor = eCells.some(r => r.some(c => c !== 'any'));
+
+    // Saved rules (skip the one being edited — editor version used instead)
+    for (const r of rules) {
+        if (editId !== null && r.id === editId) continue;
+        const rr = {w: r.w, h: r.h, cells: r.cells, anchors: r.anchors, negative: r.negative, rotational: r.rotational, mirror: r.mirror, exclude: r.exclude};
+        if (r.exclude) scanRule(rr, exclHits, r.id);
+        else scanRule(rr, savedHits, r.id);
+    }
+
+    // Editor pattern
+    if (hasEditor) {
+        const er = {w: eW, h: eH, cells: eCells, anchors: eAnchors, negative: eNegative, rotational: eRotational, mirror: eMirror, exclude: eExclude};
+        if (eExclude) scanRule(er, exclHits, EDITOR_ID);
+        else scanRule(er, editorHits, EDITOR_ID);
+    }
+
+    // Apply exclusions
+    for (const key of exclHits.keys()) {
+        editorHits.delete(key);
+        savedHits.delete(key);
+    }
+
+    // Build combined hit map for hover lookup
+    lastHitMap = new Map();
+    for (const [key, ids] of editorHits) {
+        if (!lastHitMap.has(key)) lastHitMap.set(key, new Set());
+        for (const id of ids) lastHitMap.get(key).add(id);
+    }
+    for (const [key, ids] of savedHits) {
+        if (editorHits.has(key)) continue;
+        if (!lastHitMap.has(key)) lastHitMap.set(key, new Set());
+        for (const id of ids) lastHitMap.get(key).add(id);
+    }
+
+    const green = [], red = [];
+    for (const key of editorHits.keys()) {
+        const [x, y] = key.split(',').map(Number);
+        green.push({x, y});
+    }
+    for (const key of savedHits.keys()) {
+        if (!editorHits.has(key)) {
+            const [x, y] = key.split(',').map(Number);
+            red.push({x, y});
+        }
+    }
+    return {green, red};
+}
+
+function getHitRidsAt(px, py) {
+    if (!lastHitMap) return null;
+    const rids = new Set();
+    // Check 9 sub-pixel positions: center, 4 edges, 4 corners
+    for (const dx of [0, 0.5, 1]) {
+        for (const dy of [0, 0.5, 1]) {
+            const key = (px + dx) + ',' + (py + dy);
+            const s = lastHitMap.get(key);
+            if (s) for (const id of s) rids.add(id);
+        }
+    }
+    return rids.size > 0 ? rids : null;
+}
+
+// --- RENDER ---
+function renderAll() {
+    renderTabs();
+    renderRules();
+    renderImage();
+    const hasPreview = editId === null && eCells.some(r => r.some(c => c !== 'any'));
+    document.getElementById('previewNote').style.display = hasPreview ? '' : 'none';
+}
+
+function renderImage() {
+    const cv = document.getElementById('dCanvas');
+    cv.width = imgW * zoom; cv.height = imgH * zoom;
+    const ctx = cv.getContext('2d');
+
+    // Binary image
+    const tmp = document.createElement('canvas');
+    tmp.width = imgW; tmp.height = imgH;
+    const tx = tmp.getContext('2d');
+    const id = tx.createImageData(imgW, imgH);
+    for (let y = 0; y < imgH; y++) {
+        for (let x = 0; x < imgW; x++) {
+            const i = (y * imgW + x) * 4;
+            const v = imgBin[y][x] ? 0 : 255;
+            id.data[i] = v; id.data[i + 1] = v; id.data[i + 2] = v; id.data[i + 3] = 255;
+        }
+    }
+    tx.putImageData(id, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tmp, 0, 0, imgW * zoom, imgH * zoom);
+
+    // Grid lines
+    if (zoom >= 4) {
+        ctx.strokeStyle = 'rgba(100,100,100,0.25)';
+        ctx.lineWidth = 0.5;
+        for (let x = 0; x <= imgW; x++) { ctx.beginPath(); ctx.moveTo(x * zoom, 0); ctx.lineTo(x * zoom, imgH * zoom); ctx.stroke(); }
+        for (let y = 0; y <= imgH; y++) { ctx.beginPath(); ctx.moveTo(0, y * zoom); ctx.lineTo(imgW * zoom, y * zoom); ctx.stroke(); }
+    }
+
+    // Detection
+    const hits = detect();
+    const total = hits.green.length + hits.red.length;
+    document.getElementById('mCt').textContent = total;
+
+    const r = Math.max(zoom * 0.35, 2);
+
+    // Red dots (saved rules)
+    ctx.fillStyle = 'rgba(255,30,30,0.55)';
+    for (const h of hits.red) {
+        ctx.beginPath();
+        ctx.arc(h.x * zoom, h.y * zoom, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Green dots (current editor rule)
+    ctx.fillStyle = 'rgba(30,255,30,0.6)';
+    for (const h of hits.green) {
+        ctx.beginPath();
+        ctx.arc(h.x * zoom, h.y * zoom, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// --- EVENTS ---
+function wire() {
+    document.getElementById('zSlider').addEventListener('input', e => {
+        zoom = parseInt(e.target.value);
+        document.getElementById('zVal').textContent = zoom + '\u00d7';
+        clearSel();
+        renderImage();
+    });
+
+    const cv = document.getElementById('dCanvas');
+    const sb = document.getElementById('selBox');
+
+    function pxAt(e) {
+        const rect = cv.getBoundingClientRect();
+        return {
+            x: Math.max(0, Math.min(imgW - 1, Math.floor((e.clientX - rect.left) / zoom))),
+            y: Math.max(0, Math.min(imgH - 1, Math.floor((e.clientY - rect.top) / zoom)))
+        };
+    }
+
+    cv.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        selDrag = true;
+        selStart = pxAt(e);
+        selRect = null;
+        sb.style.display = 'none';
+        document.getElementById('selActions').style.display = 'none';
+    });
+
+    cv.addEventListener('mousemove', e => {
+        const p = pxAt(e);
+        if (p.x >= 0 && p.x < imgW && p.y >= 0 && p.y < imgH) {
+            document.getElementById('coord').textContent = `(${p.x},${p.y}) ${imgBin[p.y][p.x] ? '\u25a0' : '\u25a1'}`;
+            // Hover-highlight: find rules matching any hit near this pixel
+            if (!selDrag) {
+                const rids = getHitRidsAt(p.x, p.y);
+                const changed = (rids === null) !== (hoveredRids === null) ||
+                    (rids && hoveredRids && (rids.size !== hoveredRids.size || [...rids].some(id => !hoveredRids.has(id))));
+                if (changed) {
+                    hoveredRids = rids;
+                    renderRules();
+                }
+            }
+        } else {
+            document.getElementById('coord').textContent = '';
+            if (hoveredRids) { hoveredRids = null; renderRules(); }
+        }
+        if (selDrag && selStart) {
+            const x1 = Math.min(selStart.x, p.x), y1 = Math.min(selStart.y, p.y);
+            const x2 = Math.max(selStart.x, p.x), y2 = Math.max(selStart.y, p.y);
+            sb.style.display = 'block';
+            sb.style.left = (x1 * zoom) + 'px';
+            sb.style.top = (y1 * zoom) + 'px';
+            sb.style.width = ((x2 - x1 + 1) * zoom) + 'px';
+            sb.style.height = ((y2 - y1 + 1) * zoom) + 'px';
+        }
+    });
+
+    window.addEventListener('mouseup', e => {
+        if (!selDrag) return;
+        selDrag = false;
+        if (!selStart) return;
+        const p = pxAt(e);
+        const x1 = Math.min(selStart.x, p.x), y1 = Math.min(selStart.y, p.y);
+        const x2 = Math.max(selStart.x, p.x), y2 = Math.max(selStart.y, p.y);
+        const w = x2 - x1 + 1, h = y2 - y1 + 1;
+        if (w < 2 && h < 2) { clearSel(); return; }
+        selRect = {x: x1, y: y1, w, h};
+        sb.style.display = 'block';
+        sb.style.left = (x1 * zoom) + 'px';
+        sb.style.top = (y1 * zoom) + 'px';
+        sb.style.width = (w * zoom) + 'px';
+        sb.style.height = (h * zoom) + 'px';
+        const cw = Math.min(w, 12), ch = Math.min(h, 12);
+        document.getElementById('selInfo').textContent = `${w}\u00d7${h}` + (w > 12 || h > 12 ? ` (clamped ${cw}\u00d7${ch})` : '');
+        document.getElementById('selActions').style.display = 'flex';
+    });
+
+    cv.addEventListener('mouseleave', () => {
+        if (!selDrag) document.getElementById('coord').textContent = '';
+        if (hoveredRids) { hoveredRids = null; renderRules(); }
+    });
+
+    const wrap = document.getElementById('canvasWrap');
+    wrap.addEventListener('dragover', e => { e.preventDefault(); wrap.style.borderColor = '#ff0'; });
+    wrap.addEventListener('dragleave', () => { wrap.style.borderColor = '#0ff'; });
+    wrap.addEventListener('drop', e => {
+        e.preventDefault(); wrap.style.borderColor = '#0ff';
+        const f = e.dataTransfer.files[0];
+        if (!f || !f.type.startsWith('image/')) return;
+        loadImg(f);
+    });
+}
+
+function clearSel() {
+    selDrag = false; selStart = null; selRect = null;
+    document.getElementById('selBox').style.display = 'none';
+    document.getElementById('selActions').style.display = 'none';
+}
+
+function copySelToRule() {
+    if (!selRect || !imgBin) return;
+    const {x, y, w, h} = selRect;
+    const nw = Math.min(w, 12), nh = Math.min(h, 12);
+    eW = nw; eH = nh;
+    eCells = Array.from({length: nh}, (_, ry) =>
+        Array.from({length: nw}, (_, rx) => {
+            const px = x + rx, py = y + ry;
+            if (px < 0 || px >= imgW || py < 0 || py >= imgH) return 'any';
+            return imgBin[py][px] ? 'black' : 'white';
+        })
+    );
+    eAnchors = [{x: Math.floor(nw / 2) + 0.5, y: Math.floor(nh / 2) + 0.5}];
+    document.getElementById('gW').value = nw;
+    document.getElementById('gH').value = nh;
+    editId = null;
+    buildGrid();
+    clearSel();
+    renderAll();
+}
+
+// --- SAVE / LOAD ---
+function saveSettings() {
+    const data = JSON.stringify(rules, null, 2);
+    const blob = new Blob([data], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'pixel_rules.json';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function loadSettings() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.json';
+    inp.onchange = e => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = ev => {
+            try {
+                const loaded = JSON.parse(ev.target.result);
+                if (Array.isArray(loaded)) {
+                    rules = loaded;
+                    uid = Math.max(0, ...rules.map(r => r.id)) + 1;
+                    editId = null;
+                    resetEditor();
+                    renderAll();
+                }
+            } catch (err) { alert('Invalid file'); }
+        };
+        rd.readAsText(f);
+    };
+    inp.click();
+}
+
+function loadImg(file) {
+    const rd = new FileReader();
+    rd.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+            let w = img.width, h = img.height;
+            const mx = 300;
+            if (w > mx || h > mx) { const s = mx / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const id = ctx.getImageData(0, 0, w, h);
+            imgBin = []; imgW = w; imgH = h;
+            for (let y = 0; y < h; y++) {
+                imgBin[y] = [];
+                for (let x = 0; x < w; x++) {
+                    const i = (y * w + x) * 4;
+                    imgBin[y][x] = (id.data[i] * 0.299 + id.data[i + 1] * 0.587 + id.data[i + 2] * 0.114) < 128;
+                }
+            }
+            renderAll();
+        };
+        img.src = e.target.result;
+    };
+    rd.readAsDataURL(file);
+}
+
+// --- GO ---
+init();
+</script>
+</body>
+</html>
